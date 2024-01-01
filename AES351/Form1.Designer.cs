@@ -1,4 +1,4 @@
-﻿namespace AES351
+﻿namespace asepart2
 {
     partial class Form1
     {
