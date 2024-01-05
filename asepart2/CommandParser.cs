@@ -28,6 +28,7 @@ public class CommandParser
     private bool isInsideMethod = false;
     private string currentMethodName = "";
     private int currentLineIndex = 0;
+    private readonly object graphicsLock = new object();
 
 
 
@@ -94,6 +95,8 @@ public class CommandParser
 
     public void ExecuteProgram(string program)
     {
+        lock (graphicsLock)
+        {
         var lines = codeTextBox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
         List<string> currentMethodBody = new List<string>();
         foreach (var line in lines)
@@ -237,7 +240,7 @@ public class CommandParser
         displayArea.Invalidate();
     }
 
-
+    }
 
     public void ExecuteCommand(string command)
     {
