@@ -15,6 +15,14 @@ namespace asepart2
             this.FormClosing += new FormClosingEventHandler(Form1_FormClosing);
             displayArea.Paint += new PaintEventHandler(displayArea_Paint);
         }
+         private void RunProgramsConcurrently(string program1, string program2)
+        {
+           var thread1 = new Thread(() => parser.ExecuteProgram(program1));
+           var thread2 = new Thread(() => parser.ExecuteProgram(program2));
+
+           thread1.Start();
+            thread2.Start();
+        }
 
         private void Form1_Load(object sender, EventArgs e)
         {
