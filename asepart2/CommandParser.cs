@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -11,6 +11,7 @@ public class CommandParser
     private Graphics graphics;
     private Pen currentPen;
     public PointF currentPosition;
+    private Bitmap currentDrawing;
     private bool fillEnabled = false;
 
     // Make properties public so they can be accessed by unit tests
@@ -32,44 +33,83 @@ public class CommandParser
 
 
 
+
     private bool CheckIfCondition(string condition)
     {
-        // Split the condition into its parts (e.g., "x > 3" into "x", ">", "3")
-        string[] parts = condition.Split(' ');
-
-        // Ensure that there are three parts: left operand, operator, right operand
-        if (parts.Length != 3)
+        // Check if the condition contains comparison operators
+        if (condition.Contains(">") || condition.Contains(">=") || condition.Contains("<") || condition.Contains("<=") || condition.Contains("==") || condition.Contains("!="))
         {
-            throw new ArgumentException($"Invalid condition: '{condition}'");
+            // Split the condition into its parts (e.g., "x > 3" into "x", ">", "3")
+            string[] parts = condition.Split(' ');
+
+            // Ensure that there are three parts: left operand, operator, right operand
+            if (parts.Length != 3)
+            {
+                throw new ArgumentException($"Invalid condition: '{condition}'");
+            }
+
+            string leftOperand = parts[0];
+            string comparisonOperator = parts[1];
+            string rightOperand = parts[2];
+
+            // Retrieve the values of the left and right operands
+            float leftValue = ParseFloat(leftOperand);
+            float rightValue = ParseFloat(rightOperand);
+
+            // Perform the comparison based on the operator
+            switch (comparisonOperator)
+            {
+                case ">":
+                    return leftValue > rightValue;
+                case ">=":
+                    return leftValue >= rightValue;
+                case "<":
+                    return leftValue < rightValue;
+                case "<=":
+                    return leftValue <= rightValue;
+                case "==":
+                    return leftValue == rightValue;
+                case "!=":
+                    return leftValue != rightValue;
+                default:
+                    throw new ArgumentException($"Invalid comparison operator: '{comparisonOperator}'");
+            }
         }
-
-        string leftOperand = parts[0];
-        string comparisonOperator = parts[1];
-        string rightOperand = parts[2];
-
-        // Retrieve the values of the left and right operands
-        float leftValue = ParseFloat(leftOperand);
-        float rightValue = ParseFloat(rightOperand);
-
-        // Perform the comparison based on the operator
-        switch (comparisonOperator)
+        else
         {
-            case ">":
-                return leftValue > rightValue;
-            case ">=":
-                return leftValue >= rightValue;
-            case "<":
-                return leftValue < rightValue;
-            case "<=":
-                return leftValue <= rightValue;
-            case "==":
-                return leftValue == rightValue;
-            case "!=":
-                return leftValue != rightValue;
-            default:
-                throw new ArgumentException($"Invalid comparison operator: '{comparisonOperator}'");
+            // The condition might be just a variable name, so check if it exists
+            if (variables.ContainsKey(condition))
+            {
+                // Return true if the variable exists and its value is not equal to 0
+                return variables[condition] != 0;
+            }
+            else
+            {
+                throw new ArgumentException($"Invalid condition: '{condition}'");
+            }
         }
     }
+
+
+    private float GetOperandValue(string operand)
+    {
+        // Check if the operand is a valid variable name
+        if (variables.ContainsKey(operand))
+        {
+            // If it's a variable, return its value
+            return variables[operand];
+        }
+        else if (float.TryParse(operand, out float value))
+        {
+            // If it's a numeric value, return it
+            return value;
+        }
+        else
+        {
+            throw new ArgumentException($"Invalid operand: '{operand}'");
+        }
+    }
+
 
     public class SyntaxErrorException : Exception
     {
@@ -97,154 +137,196 @@ public class CommandParser
     {
         lock (graphicsLock)
         {
-        var lines = codeTextBox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
-        List<string> currentMethodBody = new List<string>();
-        foreach (var line in lines)
-        {
-            var parts = line.Trim().Split(' ');
-            switch (parts[0].ToLower())
+            var lines = codeTextBox.Text.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+            List<string> currentMethodBody = new List<string>();
+            bool skipCommands = false; // This will determine whether to skip commands inside an if block.
+
+            foreach (var line in lines)
             {
-                case "moveto":
-                    MoveTo(float.Parse(parts[1]), float.Parse(parts[2]));
-                    break;
-                case "drawto":
-                    DrawTo(float.Parse(parts[1]), float.Parse(parts[2]));
-                    break;
-                case "clear":
-                    Clear();
-                    break;
-                case "rectangle":
-                    DrawRectangle(float.Parse(parts[1]), float.Parse(parts[2]));
-                    break;
-                case "circle":
-                    DrawCircle(float.Parse(parts[1]));
-                    break;
-                case "triangle":
-                    DrawTriangle(float.Parse(parts[1]), float.Parse(parts[2]), float.Parse(parts[3]), float.Parse(parts[4]), float.Parse(parts[5]), float.Parse(parts[6]));
-                    break;
-                case "color":
-                    SetColor(Color.FromName(parts[1]));
-                    break;
-                case "reset":
-                    ResetPenPosition();
-                    break;
-                case "fill":
-                    ToggleFill(parts[1]);
-                    break;
-                case "linewidth":
-                    SetLineThickness(float.Parse(parts[1]));
-                    break;
-                case "rotate":
-                    Rotate(float.Parse(parts[1]));
-                    break;
-                case "text":
-                    string textContent = string.Join(" ", parts.Skip(1));
-                    DrawText(textContent);
-                    break;
-                case "save":
-                    SaveImage(lines[1]);
-                    break;
-                case "load":
-                    LoadImage(lines[1]);
-                    break;
-                case "var":
-                    DefineVariable(parts[1], float.Parse(parts[2]));
-                    break;
-                case "set":
-                    SetVariable(parts[1], float.Parse(parts[2]));
-                    break;
-                case "if":
-                    if (CheckIfCondition(parts[1]))
-                    {
-                        isInsideIfBlock = true;
-                    }
-                    else
-                    {
-                        SkipToEndIf();
-                    }
-                    break;
-                case "endif":
+                var parts = line.Trim().Split(' ');
+                string command = parts[0].ToLower();
+
+                // Handle the start of an if block
+                if (command == "if")
+                {
+                    // Extract the condition and check it
+                    string condition = string.Join(" ", parts.Skip(1));
+                    isInsideIfBlock = true;
+                    skipCommands = !CheckIfCondition(condition); // Determine whether to skip the following commands
+                    continue; // Proceed to the next iteration
+                }
+
+                // Handle the end of an if block
+                if (command == "endif")
+                {
                     isInsideIfBlock = false;
-                    break;
-                case "loop":
-                    if (!isInsideLoop)
-                    {
-                        isInsideLoop = true;
-                        loopBlock.Clear();
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("Nested loops are not supported.");
-                    }
-                    break;
-                case "endloop":
-                    if (isInsideLoop)
-                    {
-                        RepeatLoopBlock(loopBlock);
-                        isInsideLoop = false;
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("Mismatched endloop statement.");
-                    }
-                    break;
-                case "method":
-                    if (currentMethodBody.Count == 0)
-                    {
-                        currentMethodBody.Clear();
-                        string methodName = parts[1];
-                        isInsideMethod = true;
-                        currentMethodName = methodName;
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("Nested method definitions are not supported.");
-                    }
-                    break;
-                case "endmethod":
-                    if (isInsideMethod)
-                    {
-                        DefineMethod(currentMethodName, currentMethodBody);
-                        currentMethodBody.Clear();
-                        isInsideMethod = false;
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException("Mismatched endmethod statement.");
-                    }
-                    break;
-                default:
-                    if (isInsideMethod)
-                    {
-                        // Add the line to the current method's body
-                        currentMethodBody.Add(line);
-                    }
-                    else if (isInsideLoop)
-                    {
-                        // Store lines within the loop block
-                        loopBlock.Add(line);
-                    }
-                    else if (IsMethodCall(parts[0]))
-                    {
-                        CallMethod(parts[0]);
-                    }
-                    else
-                    {
-                        ExecuteCommand(line);
-                    }
-                    break;
+                    skipCommands = false; // Stop skipping commands
+                    continue; // Proceed to the next iteration
+                }
+
+                // If we are inside an if block and the condition is false, skip the command execution
+                if (isInsideIfBlock && skipCommands)
+                {
+                    continue;
+                }
+                switch (parts[0].ToLower())
+                {
+                    case "moveto":
+                        MoveTo(float.Parse(parts[1]), float.Parse(parts[2]));
+                        break;
+                    case "drawto":
+                        DrawTo(float.Parse(parts[1]), float.Parse(parts[2]));
+                        break;
+                    case "clear":
+                        Clear();
+                        break;
+                    case "rectangle":
+                        DrawRectangle(float.Parse(parts[1]), float.Parse(parts[2]));
+                        break;
+                    case "circle":
+                        float radius;
+                        // Check if the argument is a variable, if not try parsing it as a float
+                        if (!variables.TryGetValue(parts[1], out radius) && !float.TryParse(parts[1], out radius))
+                        {
+                            throw new ArgumentException($"Unable to parse '{parts[1]}' as a float or variable.");
+                        }
+                        DrawCircle(radius);
+                        break;
+                    case "triangle":
+                        DrawTriangle(float.Parse(parts[1]), float.Parse(parts[2]), float.Parse(parts[3]), float.Parse(parts[4]), float.Parse(parts[5]), float.Parse(parts[6]));
+                        break;
+                    case "color":
+                        SetColor(Color.FromName(parts[1]));
+                        break;
+                    case "reset":
+                        ResetPenPosition();
+                        break;
+                    case "fill":
+                        ToggleFill(parts[1]);
+                        break;
+                    case "linewidth":
+                        SetLineThickness(float.Parse(parts[1]));
+                        break;
+                    case "rotate":
+                        Rotate(float.Parse(parts[1]));
+                        break;
+                    case "text":
+                        string textContent = string.Join(" ", parts.Skip(1));
+                        DrawText(textContent);
+                        break;
+                    case "save":
+                        SaveDrawing(string.Join(" ", parts.Skip(1)));
+                        break;
+                    case "load":
+                        LoadDrawing(string.Join(" ", parts.Skip(1)));
+                        break;
+                    case "var":
+                        DefineVariable(parts[1], float.Parse(parts[2]));
+                        break;
+                    case "set":
+                        if (parts.Length < 3)
+                        {
+                            throw new ArgumentException("Invalid set command format. Correct format: set variableName expression");
+                        }
+                        // Use the entire expression after the variable name
+                        string variableName = parts[1];
+                        string variableExpression = string.Join(" ", parts.Skip(2));
+                        SetVariable(variableName, variableExpression);
+                        break;
+                    case "if":
+                        // Extract the condition part of the if statement correctly
+                        string condition = line.Substring(line.IndexOf(' ') + 1);
+                        if (CheckIfCondition(condition))
+                        {
+                            isInsideIfBlock = true;
+                        }
+                        else
+                        {
+                            SkipToEndIf();
+                        }
+                        break;
+                    case "endif":
+                        isInsideIfBlock = false;
+                        break;
+                    case "loop":
+                        if (!isInsideLoop)
+                        {
+                            isInsideLoop = true;
+                            loopBlock.Clear();
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Nested loops are not supported.");
+                        }
+                        break;
+                    case "endloop":
+                        if (isInsideLoop)
+                        {
+                            RepeatLoopBlock(loopBlock);
+                            isInsideLoop = false;
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Mismatched endloop statement.");
+                        }
+                        break;
+                    case "method":
+                        if (currentMethodBody.Count == 0)
+                        {
+                            currentMethodBody.Clear();
+                            string methodName = parts[1];
+                            isInsideMethod = true;
+                            currentMethodName = methodName;
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Nested method definitions are not supported.");
+                        }
+                        break;
+                    case "endmethod":
+                        if (isInsideMethod)
+                        {
+                            DefineMethod(currentMethodName, currentMethodBody);
+                            currentMethodBody.Clear();
+                            isInsideMethod = false;
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException("Mismatched endmethod statement.");
+                        }
+                        break;
+                    default:
+                        if (isInsideMethod)
+                        {
+                            // Add the line to the current method's body
+                            currentMethodBody.Add(line);
+                        }
+                        else if (isInsideLoop)
+                        {
+                            // Store lines within the loop block
+                            loopBlock.Add(line);
+                        }
+                        else if (IsMethodCall(parts[0]))
+                        {
+                            CallMethod(parts[0]);
+                        }
+                        else
+                        {
+                            ExecuteCommand(line);
+                        }
+                        break;
+                }
             }
+
+            // After executing a command that draws something, refresh the PictureBox
+            displayArea.Invalidate();
         }
-
-        // After executing a command that draws something, refresh the PictureBox
-        displayArea.Invalidate();
     }
 
-    }
 
-    public void ExecuteCommand(string command)
+    public void ExecuteCommand(string commandText)
     {
-        string[] lines = command.Split(' ');
+        string[] lines = commandText.Split(' ');
         switch (lines[0].ToLower())
         {
             case "moveto":
@@ -282,17 +364,87 @@ public class CommandParser
 
     private float ParseFloat(string input)
     {
-        if (variables.ContainsKey(input))
+        // Trim the input to remove any leading or trailing white spaces
+        input = input.Trim();
+        if (string.IsNullOrEmpty(input))
         {
-            return variables[input];
+            throw new ArgumentException("Input string is null or empty.");
         }
-
+        // Try parsing directly as a float
         if (float.TryParse(input, out float result))
         {
             return result;
         }
 
+        // Handle variables
+        if (variables.TryGetValue(input, out result))
+        {
+            return result;
+        }
+
+        // Handle expressions like "x*10"
+        string[] parts = input.Split(new char[] { '*', '/', '+', '-' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 2)
+        {
+            float left = GetOperandValue(parts[0].Trim());
+            float right = GetOperandValue(parts[1].Trim());
+
+            // Determine the operator used in the expression
+            if (input.Contains("*"))
+            {
+                return left * right;
+            }
+            // Add additional conditions to handle '/', '+', and '-' if necessary
+        }
+
         throw new ArgumentException($"Unable to parse '{input}' as a float or variable.");
+    }
+
+    private void SaveDrawing(string fileName)
+    {
+        if (currentDrawing != null)
+        {
+            try
+            {
+                currentDrawing.Save(fileName + ".png"); // Save as PNG image (you can choose a different format)
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error saving the drawing: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
+    private void LoadDrawing(string fileName)
+    {
+        try
+        {
+            var loadedImage = Image.FromFile(fileName);
+            currentDrawing = new Bitmap(loadedImage);
+            graphics = Graphics.FromImage(currentDrawing);
+            displayArea.Image = currentDrawing;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Error loading the image: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+
+    private float ParseOperand(string operand)
+    {
+        if (variables.ContainsKey(operand))
+        {
+            return variables[operand];
+        }
+        else if (float.TryParse(operand, out float value))
+        {
+            return value;
+        }
+        else
+        {
+            throw new ArgumentException($"Invalid operand: '{operand}'");
+        }
     }
 
 
@@ -367,7 +519,7 @@ public class CommandParser
         }
     }
 
-    private void DefineVariable(string name, float value)
+    public void DefineVariable(string name, float value)
     {
         if (!variables.ContainsKey(name))
         {
@@ -375,21 +527,22 @@ public class CommandParser
         }
         else
         {
-            throw new ArgumentException($"Variable '{name}' is already defined.");
+            variables[name] = value; // Update the value of an existing variable
         }
     }
 
-    private void SetVariable(string name, float value)
+    private void SetVariable(string name, string expression)
     {
-        if (variables.ContainsKey(name))
+        if (string.IsNullOrWhiteSpace(expression))
         {
-            variables[name] = value;
+            throw new ArgumentException($"Expression for variable '{name}' is null or empty.");
         }
-        else
-        {
-            throw new ArgumentException($"Variable '{name}' is not defined.");
-        }
+
+        float value = ParseFloat(expression);
+        variables[name] = value;
     }
+
+
 
     private void SkipToEndIf()
     {
