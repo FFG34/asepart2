@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace asepart2
+namespace AES351
 {
     public partial class Form1 : Form
     {
@@ -14,14 +14,6 @@ namespace asepart2
             parser = new CommandParser(codeTextBox, displayArea);
             this.FormClosing += new FormClosingEventHandler(Form1_FormClosing);
             displayArea.Paint += new PaintEventHandler(displayArea_Paint);
-        }
-         private void RunProgramsConcurrently(string program1, string program2)
-        {
-           var thread1 = new Thread(() => parser.ExecuteProgram(program1));
-           var thread2 = new Thread(() => parser.ExecuteProgram(program2));
-
-           thread1.Start();
-            thread2.Start();
         }
 
         private void Form1_Load(object sender, EventArgs e)
@@ -88,18 +80,29 @@ namespace asepart2
         {
             if (e.KeyCode == Keys.Enter)
             {
-                var commandText = commandTextBox.Text;
-                try
+                string commandText = commandTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(commandText))
                 {
-                    parser.ExecuteCommand(commandText);
-                    commandTextBox.Clear();
+                    MessageBox.Show("Please enter a command.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-                catch (Exception ex)
+                else
                 {
-                    MessageBox.Show("Error executing command: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    try
+                    {
+                        parser.ExecuteCommand(commandText);
+                        displayArea.Invalidate(); // Refresh the canvas after executing the command
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show("Error: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    // Removed the clear command to keep the text in the box
                 }
+                // Prevent the event from bubbling up to other key event handlers
+                e.SuppressKeyPress = true;
             }
         }
+
 
         private void displayArea_Paint(object sender, PaintEventArgs e)
         {
